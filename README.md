@@ -224,6 +224,4 @@ Os metadados ficam visíveis na interface do Databricks em **Catalog → Tables 
 ## Fontes dos Dados
 
 - [NYC TLC Trip Record Data](https://www.nyc.gov/site/tlc/about/tlc-trip-record-data.page)
-- CDN: `https://d37ci6vzurychx.cloudfront.net/trip-data/`
 - Período: Janeiro a Maio de 2023
-- Tipos: Yellow Taxi, Green Taxi, FHV (Bronze only), FHVHV / Uber/Lyft (Bronze only)

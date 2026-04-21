@@ -1,2 +1,6 @@
-pyspark==3.5.0
-delta-spark==3.1.0
+# This project runs entirely on Databricks.
+# PySpark and Delta Lake are provided natively by the cluster.
+# No local installation is required.
+#
+# Prerequisite: Databricks Free Edition
+# https://www.databricks.com/try-databricks
