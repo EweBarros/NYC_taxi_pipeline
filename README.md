@@ -18,9 +18,9 @@ graph TD
     SRC["🌐 NYC TLC Website<br/>download_raw.py · urllib"]
     RAW["📦 RAW<br/>/Volumes/.../raw/<br/>Parquet · sem modificação"]
     BRZ["🔷 BRONZE<br/>/Volumes/.../bronze/<br/>Delta Lake · partitionBy year/month<br/>Yellow · Green · FHV · FHVHV"]
-    SY["🥈 SILVER Yellow<br/>silver_yellow_trips<br/>Unity Catalog · liquid clustering"]
-    SG["🥈 SILVER Green<br/>silver_green_trips<br/>Unity Catalog · liquid clustering"]
-    GOLD["🥇 GOLD<br/>gold_trips<br/>Unity Catalog · liquid clustering<br/>Yellow ∪ Green · filtro de data"]
+    SY["🥈 SILVER Yellow<br/>nyc_taxi.silver.yellow_trips<br/>Unity Catalog · liquid clustering"]
+    SG["🥈 SILVER Green<br/>nyc_taxi.silver.green_trips<br/>Unity Catalog · liquid clustering"]
+    GOLD["🥇 GOLD<br/>nyc_taxi.gold.trips<br/>Unity Catalog · liquid clustering<br/>Yellow ∪ Green · filtro de data"]
     Q1["📊 Query 1<br/>avg total_amount / mês<br/>Yellow · Jan–Mai 2023"]
     Q2["📊 Query 2<br/>avg passenger_count / hora<br/>Maio 2023 · Yellow + Green"]
 
@@ -50,12 +50,24 @@ graph TD
 
 ### Camadas
 
-| Camada | Localização | Formato | Registro no Catálogo | Propósito |
-|--------|-------------|---------|----------------------|-----------|
-| Raw | `/Volumes/nyc_taxi/main/data/raw/` | Parquet | Não | Cópia bruta dos arquivos originais |
-| Bronze | `/Volumes/nyc_taxi/main/data/bronze/` | Delta Lake | Não | Dados tipados, sem transformação de negócio |
-| Silver | Unity Catalog (gerenciado) | Delta Lake | Sim, com metadados | Dados limpos, schema canônico por fonte |
-| Gold | Unity Catalog (gerenciado) | Delta Lake | Sim, com metadados | Tabela unificada, pronta para análise |
+| Camada | Schema Unity Catalog | Localização | Formato | Registro no Catálogo | Propósito |
+|--------|----------------------|-------------|---------|----------------------|-----------|
+| Raw | `nyc_taxi.raw` | `/Volumes/nyc_taxi/raw/files/` | Parquet | Não | Cópia bruta dos arquivos originais |
+| Bronze | `nyc_taxi.bronze` | `/Volumes/nyc_taxi/bronze/files/` | Delta Lake | Não | Dados tipados, sem transformação de negócio |
+| Silver | `nyc_taxi.silver` | Unity Catalog (gerenciado) | Delta Lake | Sim — `yellow_trips`, `green_trips` | Dados limpos, schema canônico por fonte |
+| Gold | `nyc_taxi.gold` | Unity Catalog (gerenciado) | Delta Lake | Sim — `trips` | Tabela unificada, pronta para análise |
+
+### Organização no Unity Catalog
+
+Cada camada da arquitetura Medallion tem seu próprio schema no Unity Catalog, seguindo o padrão recomendado pelo Databricks. Isso permite controle de acesso por camada (`GRANT ON SCHEMA`) e organização clara no catálogo:
+
+```
+nyc_taxi (catalog)
+├── raw     (schema)  → Volume: files  → /Volumes/nyc_taxi/raw/files/
+├── bronze  (schema)  → Volume: files  → /Volumes/nyc_taxi/bronze/files/
+├── silver  (schema)  → Tabelas: yellow_trips, green_trips
+└── gold    (schema)  → Tabela:  trips
+```
 
 ---
 
@@ -84,8 +96,6 @@ nyc-taxi-pipeline/
 ├── config/
 │   ├── settings.py                # Paths, URLs e constantes centrais
 │   └── setup_catalog.py           # Setup único: cria schema e volume no Unity Catalog
-├── docs/
-│   └── catalog_screenshot.png     # Screenshot do Unity Catalog com as tabelas registradas
 ├── README.md
 └── requirements.txt
 ```
@@ -118,7 +128,17 @@ Abra `notebooks/pipeline_steps.ipynb` e execute as células em ordem. O notebook
 
 ## Decisões Técnicas
 
-### 1. Medallion Architecture com Source-Aligned Silver
+### 1. Um Schema por Camada no Unity Catalog
+
+O pipeline utiliza quatro schemas separados no catálogo `nyc_taxi` — um por camada Medallion: `raw`, `bronze`, `silver` e `gold`. Essa é a organização recomendada pelo Databricks para Unity Catalog, por três razões principais:
+
+- **Controle de acesso granular**: permissões podem ser concedidas por camada via `GRANT ON SCHEMA nyc_taxi.silver TO <grupo>`, sem expor camadas internas (raw/bronze) a consumidores analíticos
+- **Separação de responsabilidades**: cada schema tem um contrato claro — `raw` nunca é modificado, `bronze` é o dado técnico bruto, `silver` é o dado limpo por fonte, `gold` é a camada de consumo
+- **Organização no catálogo**: o Databricks Data Explorer exibe os schemas como seções distintas, facilitando navegação e descoberta de dados
+
+Volumes (`files`) são criados dentro dos schemas `raw` e `bronze` para armazenar os arquivos físicos (Parquet e Delta, respectivamente), sem registrá-los como tabelas do catálogo.
+
+### 2. Medallion Architecture com Source-Aligned Silver
 
 Yellow e Green são mantidos como tabelas separadas no Silver, seguindo o padrão *source-aligned Silver*. Isso garante:
 
@@ -126,7 +146,7 @@ Yellow e Green são mantidos como tabelas separadas no Silver, seguindo o padrã
 - **Lineage explícita**: cada registro da Gold é rastreável à sua fonte Silver
 - **Schema drift contido**: a harmonização ocorre em um único ponto (Gold)
 
-### 2. FHV e FHVHV apenas no Bronze
+### 3. FHV e FHVHV apenas no Bronze
 
 FHV e FHVHV (Uber, Lyft, etc.) foram ingeridos na camada Bronze para preservar os dados brutos, mas não são processados na Silver ou Gold por incompatibilidade de schema:
 
@@ -135,7 +155,7 @@ FHV e FHVHV (Uber, Lyft, etc.) foram ingeridos na camada Bronze para preservar o
 
 Para as queries obrigatórias, "todos os táxis da frota" equivale a Yellow + Green, as únicas fontes com os campos necessários. Isso está documentado nos comentários dos arquivos SQL.
 
-### 3. Delta Lake em Todas as Camadas
+### 4. Delta Lake em Todas as Camadas
 
 Delta Lake foi escolhido sobre Parquet puro por:
 
@@ -144,25 +164,25 @@ Delta Lake foi escolhido sobre Parquet puro por:
 - **`replaceWhere`**: overwrite granular por partição para idempotência (Bronze)
 - **Time travel**: capacidade de consultar versões anteriores se necessário
 
-### 4. Sem Schema Explícito na Bronze (inferência + normalização)
+### 5. Sem Schema Explícito na Bronze (inferência + normalização)
 
 O NYC TLC altera schemas entre meses: `VendorID` e `passenger_count` chegaram como `INT64` em alguns meses e `DOUBLE` em outros. A solução: ler sem schema, normalizar tipos inteiros para `Double` via `_normalize_types()`, e usar `mergeSchema=true` no write da Bronze para acomodar colunas novas sem reescrever a tabela. `mergeSchema=true` respeita o `replaceWhere` de idempotência.
 
-### 5. Idempotência
+### 6. Idempotência
 
 A Bronze usa `replaceWhere("year = {year} AND month = {month}")` com `partitionBy("year", "month")`: cada execução sobrescreve apenas a partição do mês processado sem afetar os demais. Re-execução produz resultado idêntico. O `partitionBy` é indispensável aqui: sem partições físicas, o Delta precisaria escanear a tabela inteira para localizar os arquivos do predicado, perdendo o isolamento por mês.
 
 Silver e Gold fazem full overwrite (`mode("overwrite")` sem `replaceWhere`) por simplicidade: o dataset é fixo e pequeno, então reconstruímos tudo a cada run.
 
-### 6. Renomeação das Colunas de Data no Schema Canônico
+### 7. Renomeação das Colunas de Data no Schema Canônico
 
 Yellow usa `tpep_pickup_datetime`; Green usa `lpep_pickup_datetime`. Ambas foram renomeadas para `pickup_datetime` e `dropoff_datetime` no schema canônico da Silver, permitindo o `unionByName` na Gold sem transformação adicional.
 
-### 7. Módulo Compartilhado de Transforms e Deduplicação na Silver
+### 8. Módulo Compartilhado de Transforms e Deduplicação na Silver
 
 As funções `filter_valid_records`, `deduplicate_trips` e `select_canonical_columns` são compartilhadas entre `silver_yellow.py` e `silver_green.py` via `src/transformation/transforms.py` para garantir as mesmas transformações nas duas Silvers.
 
-### 8. Filtro de Data Aplicado na Gold, não na Silver
+### 9. Filtro de Data Aplicado na Gold, não na Silver
 
 A exploração inicial revelou registros com `pickup_datetime` em anos como 2001, erros de input do motorista. A decisão de onde filtrar envolve um tradeoff:
 
@@ -171,7 +191,7 @@ A exploração inicial revelou registros com `pickup_datetime` em anos como 2001
 
 Optou-se por filtrar na Gold (`pickup_datetime >= PIPELINE_START_DATE`), mantendo a Silver como camada de dados limpos, mas completos. O valor de `PIPELINE_START_DATE` é centralizado em `config/settings.py`.
 
-### 9. Liquid Clustering em vez de Particionamento (Silver e Gold)
+### 10. Liquid Clustering em vez de Particionamento (Silver e Gold)
 
 O Databricks recomenda liquid clustering para todas as novas tabelas Delta. Para tabelas abaixo de 1 TB, particionamento tradicional geralmente prejudica mais do que ajuda: com apenas 5 meses de dados, cada partição teria ~100-200 MB, bem abaixo do mínimo recomendado de 1 GB por partição.
 
@@ -182,7 +202,7 @@ O Databricks recomenda liquid clustering para todas as novas tabelas Delta. Para
 
 **Por que `pickup_datetime` como clustering key:** a Query 2 agrupa por `HOUR(pickup_datetime)`; co-localizar registros por datetime reduz os arquivos lidos por hora do dia.
 
-**Bronze mantém `partitionBy`** porque o `replaceWhere` de idempotência depende de partições físicas (ver Decisão 5). Liquid clustering é incompatível com `partitionBy`.
+**Bronze mantém `partitionBy`** porque o `replaceWhere` de idempotência depende de partições físicas (ver Decisão 6). Liquid clustering é incompatível com `partitionBy`.
 
 | Camada | Estratégia | Justificativa |
 |--------|-----------|---------------|
@@ -191,11 +211,11 @@ O Databricks recomenda liquid clustering para todas as novas tabelas Delta. Para
 | Silver Green | Liquid clustering `(pickup_datetime)` | Idem |
 | Gold | Liquid clustering `(pickup_datetime)` | Idem |
 
-### 10. Colunas de Lineage em Todas as Camadas
+### 11. Colunas de Lineage em Todas as Camadas
 
 Cada camada adiciona colunas de auditoria: Bronze captura `_ingested_at`, `_source_file` e `_source_system`; Silver propaga `_bronze_source_file` e adiciona `_silver_processed_at`; Gold registra `_computed_at`. Descrições das colunas estão disponíveis no Unity Catalog via `DESCRIBE TABLE EXTENDED`.
 
-### 11. Metadados no Unity Catalog
+### 12. Metadados no Unity Catalog
 
 Todas as tabelas Silver e Gold registradas no Unity Catalog incluem:
 
@@ -203,10 +223,6 @@ Todas as tabelas Silver e Gold registradas no Unity Catalog incluem:
 - Comentário por coluna (`ALTER TABLE ... ALTER COLUMN ... COMMENT`) para todas as colunas, incluindo as colunas de lineage (`_bronze_source_file`, `_silver_processed_at`, `_computed_at`)
 
 Os metadados ficam visíveis na interface do Databricks em **Catalog → Tables → Columns** e são consultáveis via `DESCRIBE TABLE EXTENDED`.
-
-<p align="center"><img src="docs/catalog_screenshot.png" width="300"/></p>
-
-- **Desvio do padrão:** o padrão recomendado é um schema por camada (`nyc_taxi.bronze`, `nyc_taxi.silver`, `nyc_taxi.gold`), o que permite controle de acesso por camada via `GRANT ON SCHEMA`. Neste projeto, todas as tabelas ficaram em um único schema `nyc_taxi.main` por simplificação do setup. Em produção, o certo seria criar schemas separados por camada.
 
 ---
 

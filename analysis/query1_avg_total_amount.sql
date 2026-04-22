@@ -10,7 +10,7 @@ SELECT
     YEAR(pickup_datetime)        AS year,
     MONTH(pickup_datetime)       AS month,
     ROUND(AVG(total_amount), 2)  AS avg_total_amount
-FROM nyc_taxi.main.gold_trips
+FROM nyc_taxi.gold.trips
 WHERE taxi_type        = 'yellow'
   AND pickup_datetime >= '2023-01-01'
   AND pickup_datetime  < '2023-06-01'

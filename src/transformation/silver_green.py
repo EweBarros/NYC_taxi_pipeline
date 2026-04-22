@@ -1,14 +1,14 @@
 from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
 
-from config.settings import CATALOG, PATHS, SCHEMA
+from config.settings import CATALOG, PATHS, SILVER_SCHEMA
 from src.transformation.transforms import (
     deduplicate_trips,
     filter_valid_records,
     select_canonical_columns,
 )
 
-TABLE = f"{CATALOG}.{SCHEMA}.silver_green_trips"
+TABLE = f"{CATALOG}.{SILVER_SCHEMA}.green_trips"
 
 
 def build_silver_green(spark: SparkSession) -> None:
@@ -32,7 +32,6 @@ def build_silver_green(spark: SparkSession) -> None:
         .withColumn("_silver_processed_at", F.current_timestamp())
     )
 
-    spark.sql(f"CREATE SCHEMA IF NOT EXISTS {CATALOG}.{SCHEMA}")
     (
         silver_df.write.format("delta")
         .mode("overwrite")

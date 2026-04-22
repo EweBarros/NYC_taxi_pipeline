@@ -12,7 +12,7 @@
 SELECT
     HOUR(pickup_datetime)          AS hour_of_day,
     ROUND(AVG(passenger_count), 2) AS avg_passenger_count
-FROM nyc_taxi.main.gold_trips
+FROM nyc_taxi.gold.trips
 WHERE pickup_datetime  >= '2023-05-01'
   AND pickup_datetime   < '2023-06-01'
   AND passenger_count  IS NOT NULL

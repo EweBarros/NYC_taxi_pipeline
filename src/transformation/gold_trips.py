@@ -1,14 +1,14 @@
 from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
 
-from config.settings import CATALOG, PIPELINE_START_DATE, SCHEMA
+from config.settings import CATALOG, GOLD_SCHEMA, PIPELINE_START_DATE, SILVER_SCHEMA
 
 
 def build_gold_trips(spark: SparkSession) -> None:
-    table = f"{CATALOG}.{SCHEMA}.gold_trips"
+    table = f"{CATALOG}.{GOLD_SCHEMA}.trips"
 
-    yellow = spark.table(f"{CATALOG}.{SCHEMA}.silver_yellow_trips")
-    green  = spark.table(f"{CATALOG}.{SCHEMA}.silver_green_trips")
+    yellow = spark.table(f"{CATALOG}.{SILVER_SCHEMA}.yellow_trips")
+    green  = spark.table(f"{CATALOG}.{SILVER_SCHEMA}.green_trips")
 
     # Registros com datas absurdas (ex: 2001) são erros de input do motorista.
     # O filtro fica na Gold para que a Silver preserve os dados brutos auditáveis.
@@ -18,7 +18,6 @@ def build_gold_trips(spark: SparkSession) -> None:
         .withColumn("_computed_at", F.current_timestamp())
     )
 
-    spark.sql(f"CREATE SCHEMA IF NOT EXISTS {CATALOG}.{SCHEMA}")
     (
         gold.write.format("delta")
         .mode("overwrite")
