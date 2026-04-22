@@ -126,6 +126,8 @@ Yellow e Green são mantidos como tabelas separadas no Silver, seguindo o padrã
 - **Lineage explícita**: cada registro da Gold é rastreável à sua fonte Silver
 - **Schema drift contido**: a harmonização ocorre em um único ponto (Gold)
 
+**Desvio do padrão:** o padrão recomendado é um schema por camada (`nyc_taxi.bronze`, `nyc_taxi.silver`, `nyc_taxi.gold`), o que permite controle de acesso por camada via `GRANT ON SCHEMA`. Neste projeto, todas as tabelas ficaram em um único schema `nyc_taxi.main` por simplificação do setup. Em produção, o certo seria criar schemas separados por camada.
+
 ### 2. FHV e FHVHV apenas no Bronze
 
 FHV e FHVHV (Uber, Lyft, etc.) foram ingeridos na camada Bronze para preservar os dados brutos, mas não são processados na Silver ou Gold por incompatibilidade de schema:
