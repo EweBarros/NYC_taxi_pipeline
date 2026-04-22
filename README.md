@@ -54,20 +54,8 @@ graph TD
 |--------|----------------------|-------------|---------|----------------------|-----------|
 | Raw | `nyc_taxi.raw` | `/Volumes/nyc_taxi/raw/files/` | Parquet | Não | Cópia bruta dos arquivos originais |
 | Bronze | `nyc_taxi.bronze` | `/Volumes/nyc_taxi/bronze/files/` | Delta Lake | Não | Dados tipados, sem transformação de negócio |
-| Silver | `nyc_taxi.silver` | Unity Catalog (gerenciado) | Delta Lake | Sim — `yellow_trips`, `green_trips` | Dados limpos, schema canônico por fonte |
-| Gold | `nyc_taxi.gold` | Unity Catalog (gerenciado) | Delta Lake | Sim — `trips` | Tabela unificada, pronta para análise |
-
-### Organização no Unity Catalog
-
-Cada camada da arquitetura Medallion tem seu próprio schema no Unity Catalog, seguindo o padrão recomendado pelo Databricks. Isso permite controle de acesso por camada (`GRANT ON SCHEMA`) e organização clara no catálogo:
-
-```
-nyc_taxi (catalog)
-├── raw     (schema)  → Volume: files  → /Volumes/nyc_taxi/raw/files/
-├── bronze  (schema)  → Volume: files  → /Volumes/nyc_taxi/bronze/files/
-├── silver  (schema)  → Tabelas: yellow_trips, green_trips
-└── gold    (schema)  → Tabela:  trips
-```
+| Silver | `nyc_taxi.silver` | Unity Catalog (gerenciado) | Delta Lake | Sim - `yellow_trips`, `green_trips` | Dados limpos, schema canônico por fonte |
+| Gold | `nyc_taxi.gold` | Unity Catalog (gerenciado) | Delta Lake | Sim - `trips` | Tabela unificada, pronta para análise |
 
 ---
 
@@ -130,13 +118,21 @@ Abra `notebooks/pipeline_steps.ipynb` e execute as células em ordem. O notebook
 
 ### 1. Um Schema por Camada no Unity Catalog
 
-O pipeline utiliza quatro schemas separados no catálogo `nyc_taxi` — um por camada Medallion: `raw`, `bronze`, `silver` e `gold`. Essa é a organização recomendada pelo Databricks para Unity Catalog, por três razões principais:
+O pipeline utiliza quatro schemas separados no catálogo `nyc_taxi`, um por camada Medallion: `raw`, `bronze`, `silver` e `gold`. Essa é a organização recomendada pelo Databricks para Unity Catalog, por três razões principais:
 
 - **Controle de acesso granular**: permissões podem ser concedidas por camada via `GRANT ON SCHEMA nyc_taxi.silver TO <grupo>`, sem expor camadas internas (raw/bronze) a consumidores analíticos
-- **Separação de responsabilidades**: cada schema tem um contrato claro — `raw` nunca é modificado, `bronze` é o dado técnico bruto, `silver` é o dado limpo por fonte, `gold` é a camada de consumo
+- **Separação de responsabilidades**: cada schema tem um contrato claro: `raw` nunca é modificado, `bronze` é o dado técnico bruto, `silver` é o dado limpo por fonte, `gold` é a camada de consumo
 - **Organização no catálogo**: o Databricks Data Explorer exibe os schemas como seções distintas, facilitando navegação e descoberta de dados
 
 Volumes (`files`) são criados dentro dos schemas `raw` e `bronze` para armazenar os arquivos físicos (Parquet e Delta, respectivamente), sem registrá-los como tabelas do catálogo.
+
+```
+nyc_taxi (catalog)
+├── raw     (schema)  → Volume: files  → /Volumes/nyc_taxi/raw/files/
+├── bronze  (schema)  → Volume: files  → /Volumes/nyc_taxi/bronze/files/
+├── silver  (schema)  → Tabelas: yellow_trips, green_trips
+└── gold    (schema)  → Tabela:  trips
+```
 
 ### 2. Medallion Architecture com Source-Aligned Silver
 
